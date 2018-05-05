@@ -1,0 +1,22 @@
+{
+  "name": "@fantasyarcade/ready-memory-disk",
+  "version": "1.0.0",
+  "description": "A synchronous, in-memory block device for READY",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fantasyarcade/ready-memory-disk.git"
+  },
+  "author": "Jason Frame <jwf@jasonframe.co.uk>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/fantasyarcade/ready-memory-disk/issues"
+  },
+  "homepage": "https://github.com/fantasyarcade/ready-memory-disk#readme",
+  "dependencies": {
+    "@fantasyarcade/uint8array-utils": "^1.0.0"
+  }
+}
