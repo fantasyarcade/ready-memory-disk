@@ -66,6 +66,10 @@ class Disk {
         this.events.emit('write', ix, data);
     }
 
+    checkpoint() {
+        this.events.emit('checkpoint');
+    }
+
     _validateBlock(ix) {
         if (typeof ix !== 'number') {
             throw new TypeError("Block index must be numeric");
