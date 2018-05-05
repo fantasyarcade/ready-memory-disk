@@ -17,6 +17,6 @@
   },
   "homepage": "https://github.com/fantasyarcade/ready-memory-disk#readme",
   "dependencies": {
-    "@fantasyarcade/uint8array-utils": "^1.0.1"
+    "@fantasyarcade/uint8array-utils": "^1.1.0"
   }
 }

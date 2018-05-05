@@ -2,7 +2,9 @@ const EventEmitter = require('events');
 
 const {
     readFixedLengthAsciiString,
-    writeFixedLengthAsciiString
+    writeFixedLengthAsciiString,
+    readUint32BE,
+    writeUint32BE
 } = require('@fantasyarcade/uint8array-utils');
 
 const DiskHeader = 'READYOK';
@@ -14,10 +16,10 @@ const MaxBlockSize = 4096;
 exports.createBlankDisk = function(blockSize, blockCount) {
     validateBlockInfo(blockSize, blockCount);
     const buffer = new ArrayBuffer(blockSize * blockCount);
-    writeFixedLengthAsciiString(new Uint8Array(buffer), 0, DiskHeaderSize, DiskHeader);
-    const blockInfo = new Uint32Array(buffer, DiskHeaderSize, 2);
-    blockInfo[0] = blockSize;
-    blockInfo[1] = blockCount;
+    const bytes = new Uint8Array(buffer);
+    writeFixedLengthAsciiString(bytes, 0, DiskHeaderSize, DiskHeader);
+    writeUint32BE(bytes, DiskHeaderSize, blockSize);
+    writeUint32BE(bytes, DiskHeaderSize + 4, blockCount);
     return new Disk(blockSize, blockCount, buffer);
 }
 
@@ -25,12 +27,14 @@ exports.openDisk = function(data) {
     if (!(data instanceof ArrayBuffer)) {
         throw new TypeError("Disk data must be an ArrayBuffer");
     }
-    if (readFixedLengthAsciiString(new Uint8Array(data), 0, 8) !== DiskHeader) {
+    const bytes = new Uint8Array(data);
+    if (readFixedLengthAsciiString(bytes, 0, 8) !== DiskHeader) {
         throw new Error("Invalid disk header");
     }
-    const blockInfo = new Uint32Array(data, DiskHeaderSize, 2);
-    validateBlockInfo(blockInfo[0], blockInfo[1]);
-    return new Disk(blockInfo[0], blockInfo[1], data);
+    const blockSize = readUint32BE(bytes, DiskHeaderSize);
+    const blockCount = readUint32BE(bytes, DiskHeaderSize + 4);
+    validateBlockInfo(blockSize, blockCount);
+    return new Disk(blockSize, blockCount, data);
 }
 
 class Disk {
