@@ -47,7 +47,8 @@ class Disk {
 
     readBlock(ix) {
         this._validateBlock(ix);
-        return this._image.slice(ix * this.blockSize, this.blockSize);
+        const start = ix * this.blockSize;
+        return this._image.slice(start, start + this.blockSize);
     }
 
     writeBlock(ix, data) {
