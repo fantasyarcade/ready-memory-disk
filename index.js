@@ -66,6 +66,18 @@ class Disk {
         this.events.emit('write', ix, data);
     }
 
+    zeroBlock(ix) {
+        this._validateBlock(ix);
+        if (ix === 0) {
+            throw new RangeError("Cannot write to block 0");
+        }
+        const base = ix * this.blockSize;
+        for (let p = 0; p < this.blockSize; ++p) {
+            this._image[base + p] = 0;
+        }
+        this.events.emit('zero', ix);
+    }
+
     checkpoint() {
         this.events.emit('checkpoint');
     }
