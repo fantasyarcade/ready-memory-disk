@@ -45,6 +45,14 @@ class Disk {
         this._image = new Uint8Array(buffer);
     }
 
+    makeBlock(fill) {
+        const b = new Uint8Array(this.blockSize);
+        if (fill !== 0) {
+            b.fill(fill);
+        }
+        return b;
+    }
+
     readBlock(ix) {
         this._validateBlock(ix);
         const start = ix * this.blockSize;
