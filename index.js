@@ -1,109 +1,137 @@
-const EventEmitter = require('events');
+const {EventEmitter} = require('events');
+
+function gencons(target, map) {
+    for (let k in map) {
+        target[k] = map[k];
+    }
+    return map;
+}
+
+function gensyms(target, names) {
+    const out = {};
+    names.forEach(n => { out[n] = Symbol(n); });
+    return gencons(target, out);
+}
 
 const {
-    readFixedLengthAsciiString,
-    writeFixedLengthAsciiString,
-    readUint32BE,
-    writeUint32BE
-} = require('@fantasyarcade/uint8array-utils');
+    DiskActivityRead,
+    DiskActivityWrite
+} = gencons(exports, {
+    DiskActivityRead: 0x01,
+    DiskActivityWrite: 0x02
+});
 
-const DiskHeader = 'READYOK';
-const DiskHeaderSize = DiskHeader.length + 1;
+const {
+    EvDriveActivity
+} = gensyms(exports, [
+    'EvDriveActivity'
+]);
 
-const MinBlockSize = 128;
-const MaxBlockSize = 4096;
-
-exports.createBlankDisk = function(blockSize, blockCount) {
-    validateBlockInfo(blockSize, blockCount);
-    const buffer = new ArrayBuffer(blockSize * blockCount);
-    const bytes = new Uint8Array(buffer);
-    writeFixedLengthAsciiString(bytes, 0, DiskHeaderSize, DiskHeader);
-    writeUint32BE(bytes, DiskHeaderSize, blockSize);
-    writeUint32BE(bytes, DiskHeaderSize + 4, blockCount);
-    return new Disk(blockSize, blockCount, buffer);
-}
-
-exports.openDisk = function(data) {
-    if (!(data instanceof ArrayBuffer)) {
-        throw new TypeError("Disk data must be an ArrayBuffer");
-    }
-    const bytes = new Uint8Array(data);
-    if (readFixedLengthAsciiString(bytes, 0, 8) !== DiskHeader) {
-        throw new Error("Invalid disk header");
-    }
-    const blockSize = readUint32BE(bytes, DiskHeaderSize);
-    const blockCount = readUint32BE(bytes, DiskHeaderSize + 4);
-    validateBlockInfo(blockSize, blockCount);
-    return new Disk(blockSize, blockCount, data);
-}
-
-class Disk {
-    constructor(blockSize, blockCount, buffer) {
-        this.blockSize = blockSize;
-        this.blockCount = blockCount;
-        this.events = new EventEmitter();
-        this._image = new Uint8Array(buffer);
+exports.MemoryDisk = class MemoryDisk extends EventEmitter {
+    constructor(diskImage) {
+        super();
+        this._disk = diskImage;
+        this.blocksRead = 0;
+        this.blocksWritten = 0;
     }
 
-    makeBlock(fill) {
-        const b = new Uint8Array(this.blockSize);
-        if (fill !== 0) {
-            b.fill(fill);
+    get blockSize() { return this._disk.blockSize; }
+    get blockCount() { return this._disk.blockCount; }
+    get fileSystemType() { return this._disk.fileSystemType; }
+
+    zero(block, count) {
+        let err = this._validateBlockRange(startBlock, count);
+        if (err !== true) {
+            return err;
         }
-        return b;
+        
+        const startBlock = block;
+        const endBlock = block + count;
+        while (block < endBlock) {
+            this._disk.zeroBlock(block);
+            startBlock++;
+            this.blocksWritten++;
+        }
+        
+        this._invalidate('z', startBlock, count);
+        this.emit(EvDriveActivity, DiskActivityWrite);
+        
+        return true;
+    }
+    
+    write(block, blockCount, data) {
+        let err = this._validateBlockRange(block, blockCount);
+        if (err !== true) {
+            return err;
+        }
+
+        err = this._validateBufferSize(blockCount, data);
+        if (err !== true) {
+            return err;
+        }
+
+        const startBlock = block;
+        const bs = this.blockSize;
+        let offset = 0;
+        while (offset < data.length) {
+            const endOffset = offset + bs;
+            this._disk.writeBlock(startBlock, data.subarray(offset, endOffset));
+            startBlock++;
+            offset = endOffset;
+            this.blocksWritten++;
+        }
+        
+        this._invalidate('w', block, blockCount);
+        this.emit(EvDriveActivity, DiskActivityWrite);
+
+        return true;
+
+    }
+    
+    read(startBlock, blockCount, outBuffer) {
+        let err = this._validateBlockRange(startBlock, blockCount);
+        if (err !== true) {
+            return err;
+        }
+
+        err = this._validateBufferSize(blockCount, outBuffer);
+        if (err !== true) {
+            return err;
+        }
+
+        const bs = this.blockSize;
+        let offset = 0;
+        while (offset < outBuffer.length) {
+            const endOffset = offset + bs;
+            this._disk.readBlock(startBlock, outBuffer.subarray(offset, endOffset));
+            startBlock++;
+            offset = endOffset;
+            this.blocksRead++;
+        }
+
+        this.emit(EvDriveActivity, DiskActivityRead);
+
+        return true;
     }
 
-    readBlock(ix) {
-        this._validateBlock(ix);
-        const start = ix * this.blockSize;
-        return this._image.slice(start, start + this.blockSize);
+    _validateBlockRange(startBlock, count) {
+        if (startBlock < 1
+            || count < 1
+            || startBlock >= this.blockCount
+            || (startBlock + count) > this.blockCount) {
+            return ErrInvalidBlockRange;
+        }
+        return true;
     }
 
-    writeBlock(ix, data) {
-        this._validateBlock(ix);
-        if (ix === 0) {
-            throw new RangeError("Cannot write to block 0");
+    _validateBufferSize(blockCount, buffer) {
+        if ((blockCount * this.blockSize) !== buffer.length) {
+            return ErrInvalidBufferSize;
         }
-        if (data.length !== this.blockSize) {
-            throw new Error("Block data length must be equal to block size");
-        }
-        const base = ix * this.blockSize;
-        for (let p = 0; p < data.length; ++p) {
-            this._image[base + p] = data[p];
-        }
-        this.events.emit('write', ix, data);
+        return true;
     }
 
-    zeroBlock(ix) {
-        this._validateBlock(ix);
-        if (ix === 0) {
-            throw new RangeError("Cannot write to block 0");
-        }
-        const base = ix * this.blockSize;
-        for (let p = 0; p < this.blockSize; ++p) {
-            this._image[base + p] = 0;
-        }
-        this.events.emit('zero', ix);
+    _invalidate(op, startBlock, blockCount) {
+        // TODO: trigger sync etc.
     }
-
-    checkpoint() {
-        this.events.emit('checkpoint');
-    }
-
-    _validateBlock(ix) {
-        if (typeof ix !== 'number') {
-            throw new TypeError("Block index must be numeric");
-        }
-        if (ix < 0 || ix >= this.blockCount) {
-            throw new RangeError("Invalid block: " + ix);
-        }
-    }
-}
-
-function validateBlockInfo(size, count) {
-    if (size < MinBlockSize || size > MaxBlockSize) {
-        throw new RangeError(`Invalid block size, must be in range ${MinBlockSize}..${MaxBlockSize}`);
-    }
-    // TODO: ensure blockSize is multiple of 2
-    // TODO: block count
-}
+};
